@@ -297,7 +297,10 @@ export async function startFixedHTTPServer() {
     const startTime = Date.now();
     
     // Enhanced authentication check with specific logging
-    const authHeader = req.headers.authorization;
+    const queryToken = req.query.token as string;
+    
+    const authHeader = req.headers.authorization ||
+      (queryToken ? `Bearer ${queryToken}` : undefined);
     
     // Check if Authorization header is missing
     if (!authHeader) {

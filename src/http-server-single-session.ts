@@ -5,7 +5,6 @@
  * while maintaining simplicity for single-player use case
  */
 import express from 'express';
-import rateLimit from 'express-rate-limit';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { SSEServerTransport } from '@modelcontextprotocol/sdk/server/sse.js';
 import { N8NDocumentationMCPServer } from './mcp/server';
@@ -115,16 +114,16 @@ export class SingleSessionHTTPServer {
   ) * 60 * 1000;
   private authToken: string | null = null;
   private cleanupTimer: NodeJS.Timeout | null = null;
-  
+
   constructor() {
     // Validate environment on construction
     this.validateEnvironment();
     // No longer pre-create session - will be created per initialize request following SDK pattern
-    
+
     // Start periodic session cleanup
     this.startSessionCleanup();
   }
-  
+
   /**
    * Start periodic session cleanup
    */
@@ -136,14 +135,14 @@ export class SingleSessionHTTPServer {
         logger.error('Error during session cleanup', error);
       }
     }, SESSION_CLEANUP_INTERVAL);
-    
-    logger.info('Session cleanup started', { 
+
+    logger.info('Session cleanup started', {
       interval: SESSION_CLEANUP_INTERVAL / 1000 / 60,
       maxSessions: MAX_SESSIONS,
       sessionTimeout: this.sessionTimeout / 1000 / 60
     });
   }
-  
+
   /**
    * Clean up expired sessions based on last access time
    */
@@ -180,7 +179,7 @@ export class SingleSessionHTTPServer {
       });
     }
   }
-  
+
   /**
    * Remove a session and clean up resources
    */
@@ -219,21 +218,21 @@ export class SingleSessionHTTPServer {
       logger.warn('Error removing session', { sessionId, reason, error });
     }
   }
-  
+
   /**
    * Get current active session count
    */
   private getActiveSessionCount(): number {
     return Object.keys(this.transports).length;
   }
-  
+
   /**
    * Check if we can create a new session
    */
   private canCreateSession(): boolean {
     return this.getActiveSessionCount() < MAX_SESSIONS;
   }
-  
+
   /**
    * Validate session ID format
    *
@@ -253,13 +252,13 @@ export class SingleSessionHTTPServer {
     // This ensures compatibility with all MCP clients and proxies
     return Boolean(sessionId && sessionId.length > 0);
   }
-  
+
   /**
    * Sanitize error information for client responses
    */
   private sanitizeErrorForClient(error: unknown): { message: string; code: string } {
     const isProduction = process.env.NODE_ENV === 'production';
-    
+
     if (error instanceof Error) {
       // In production, only return generic messages
       if (isProduction) {
@@ -276,18 +275,18 @@ export class SingleSessionHTTPServer {
         // Default generic error
         return { message: 'Internal server error', code: 'INTERNAL_ERROR' };
       }
-      
+
       // In development, return more details but no stack traces
       return {
         message: error.message.substring(0, 200), // Limit message length
         code: error.name || 'ERROR'
       };
     }
-    
+
     // For non-Error objects
     return { message: 'An error occurred', code: 'UNKNOWN_ERROR' };
   }
-  
+
   /**
    * Update session last access time
    */
@@ -351,14 +350,14 @@ export class SingleSessionHTTPServer {
   private getSessionMetrics(): SessionMetrics {
     const now = Date.now();
     let expiredCount = 0;
-    
+
     for (const sessionId in this.sessionMetadata) {
       const metadata = this.sessionMetadata[sessionId];
       if (now - metadata.lastAccess.getTime() > this.sessionTimeout) {
         expiredCount++;
       }
     }
-    
+
     return {
       totalSessions: Object.keys(this.sessionMetadata).length,
       activeSessions: this.getActiveSessionCount(),
@@ -366,7 +365,7 @@ export class SingleSessionHTTPServer {
       lastCleanup: new Date()
     };
   }
-  
+
   /**
    * Load auth token from environment variable or file
    */
@@ -376,7 +375,7 @@ export class SingleSessionHTTPServer {
       logger.info('Using AUTH_TOKEN from environment variable');
       return process.env.AUTH_TOKEN;
     }
-    
+
     // Then, try AUTH_TOKEN_FILE
     if (process.env.AUTH_TOKEN_FILE) {
       try {
@@ -390,34 +389,34 @@ export class SingleSessionHTTPServer {
         return null;
       }
     }
-    
+
     return null;
   }
-  
+
   /**
    * Validate required environment variables
    */
   private validateEnvironment(): void {
     // Load auth token from env var or file
     this.authToken = this.loadAuthToken();
-    
+
     if (!this.authToken || this.authToken.trim() === '') {
       const message = 'No authentication token found or token is empty. Set AUTH_TOKEN environment variable or AUTH_TOKEN_FILE pointing to a file containing the token.';
       logger.error(message);
       throw new Error(message);
     }
-    
+
     // Update authToken to trimmed version
     this.authToken = this.authToken.trim();
-    
+
     if (this.authToken.length < 32) {
       logger.warn('AUTH_TOKEN should be at least 32 characters for security');
     }
-    
+
     // Check for default token and show prominent warnings
     const isDefaultToken = this.authToken === 'REPLACE_THIS_AUTH_TOKEN_32_CHARS_MIN_abcdefgh';
     const isProduction = process.env.NODE_ENV === 'production';
-    
+
     if (isDefaultToken) {
       if (isProduction) {
         const message = 'CRITICAL SECURITY ERROR: Cannot start in production with default AUTH_TOKEN. Generate secure token: openssl rand -base64 32';
@@ -427,10 +426,10 @@ export class SingleSessionHTTPServer {
         console.error('Set NODE_ENV to development for testing, or update AUTH_TOKEN for production\n');
         throw new Error(message);
       }
-      
+
       logger.warn('⚠️ SECURITY WARNING: Using default AUTH_TOKEN - CHANGE IMMEDIATELY!');
       logger.warn('Generate secure token with: openssl rand -base64 32');
-      
+
       // Only show console warnings in HTTP mode
       if (process.env.MCP_MODE === 'http') {
         console.warn('\n⚠️  SECURITY WARNING ⚠️');
@@ -440,7 +439,7 @@ export class SingleSessionHTTPServer {
       }
     }
   }
-  
+
 
   /**
    * Handle incoming MCP request using proper SDK pattern
@@ -455,13 +454,13 @@ export class SingleSessionHTTPServer {
     instanceContext?: InstanceContext
   ): Promise<void> {
     const startTime = Date.now();
-    
+
     // Wrap all operations to prevent console interference
     return this.consoleManager.wrapOperation(async () => {
       try {
         const sessionId = req.headers['mcp-session-id'] as string | undefined;
-        const isInitialize = req.body ? isInitializeRequest(req.body) : false;
-        
+        let isInitialize = req.body ? isInitializeRequest(req.body) : false;
+
         // Log comprehensive incoming request details for debugging
         logger.info('handleRequest: Processing MCP request - SDK PATTERN', {
           requestId: req.get('x-request-id') || 'unknown',
@@ -473,9 +472,9 @@ export class SingleSessionHTTPServer {
           existingTransports: Object.keys(this.transports),
           isInitializeRequest: isInitialize
         });
-        
+
         let transport: StreamableHTTPServerTransport;
-        
+
         if (isInitialize) {
           // Check session limits before creating new session
           if (!this.canCreateSession()) {
@@ -483,7 +482,7 @@ export class SingleSessionHTTPServer {
               currentSessions: this.getActiveSessionCount(),
               maxSessions: MAX_SESSIONS
             });
-            
+
             res.status(429).json({
               jsonrpc: '2.0',
               error: {
@@ -494,7 +493,7 @@ export class SingleSessionHTTPServer {
             });
             return;
           }
-          
+
           // For initialize requests: always create new transport and server
           logger.info('handleRequest: Creating new transport for initialize request');
 
@@ -551,17 +550,17 @@ export class SingleSessionHTTPServer {
           }
 
           const server = new N8NDocumentationMCPServer(instanceContext);
-          
+
           transport = new StreamableHTTPServerTransport({
             sessionIdGenerator: () => sessionIdToUse,
             onsessioninitialized: (initializedSessionId: string) => {
               // Store both transport and server by session ID when session is initialized
-              logger.info('handleRequest: Session initialized, storing transport and server', { 
-                sessionId: initializedSessionId 
+              logger.info('handleRequest: Session initialized, storing transport and server', {
+                sessionId: initializedSessionId
               });
               this.transports[initializedSessionId] = transport;
               this.servers[initializedSessionId] = server;
-              
+
               // Store session metadata and context
               this.sessionMetadata[initializedSessionId] = {
                 lastAccess: new Date(),
@@ -570,7 +569,7 @@ export class SingleSessionHTTPServer {
               this.sessionContexts[initializedSessionId] = instanceContext;
             }
           });
-          
+
           // Set up cleanup handlers
           transport.onclose = () => {
             const sid = transport.sessionId;
@@ -579,7 +578,7 @@ export class SingleSessionHTTPServer {
               this.removeSession(sid, 'transport_closed');
             }
           };
-          
+
           // Handle transport errors to prevent connection drops
           transport.onerror = (error: Error) => {
             const sid = transport.sessionId;
@@ -590,11 +589,11 @@ export class SingleSessionHTTPServer {
               });
             }
           };
-          
+
           // Connect the server to the transport BEFORE handling the request
           logger.info('handleRequest: Connecting server to new transport');
           await server.connect(transport);
-          
+
         } else if (sessionId && this.transports[sessionId]) {
           // Validate session ID format
           if (!this.isValidSessionId(sessionId)) {
@@ -609,7 +608,7 @@ export class SingleSessionHTTPServer {
             });
             return;
           }
-          
+
           // For non-initialize requests: reuse existing transport for this session
           logger.info('handleRequest: Reusing existing transport for session', { sessionId });
           transport = this.transports[sessionId];
@@ -625,46 +624,53 @@ export class SingleSessionHTTPServer {
 
           // Update session access time
           this.updateSessionAccess(sessionId);
-          
+
         } else {
-          // Invalid request - no session ID and not an initialize request
-          const errorDetails = {
-            hasSessionId: !!sessionId,
-            isInitialize: isInitialize,
-            sessionIdValid: sessionId ? this.isValidSessionId(sessionId) : false,
-            sessionExists: sessionId ? !!this.transports[sessionId] : false
-          };
-          
-          logger.warn('handleRequest: Invalid request - no session ID and not initialize', errorDetails);
-          
-          let errorMessage = 'Bad Request: No valid session ID provided and not an initialize request';
-          if (sessionId && !this.isValidSessionId(sessionId)) {
-            errorMessage = 'Bad Request: Invalid session ID format';
-          } else if (sessionId && !this.transports[sessionId]) {
-            errorMessage = 'Bad Request: Session not found or expired';
+          // Stale or missing session ID.
+          // If we have an active SSE session, route directly through it —
+          // the SSE transport owns the response channel back to Claude.
+          if (this.session && this.session.isSSE) {
+            logger.info('handleRequest: Routing through active SSE transport', {
+              incomingSessionId: sessionId || 'none',
+              sseSessionId: this.session.sessionId
+            });
+            await (this.session.transport as SSEServerTransport).handlePostMessage(req, res, req.body);
+            return;
           }
-          
-          res.status(400).json({
-            jsonrpc: '2.0',
-            error: {
-              code: -32000,
-              message: errorMessage
-            },
-            id: req.body?.id || null
+
+          // No SSE session — auto-initialize a new StreamableHTTP session
+          logger.info('handleRequest: No session and no SSE — auto-initializing');
+          const autoServer = new N8NDocumentationMCPServer(instanceContext);
+          const autoSessionId = uuidv4();
+          const autoTransport = new StreamableHTTPServerTransport({
+            sessionIdGenerator: () => autoSessionId,
+            onsessioninitialized: (sid: string) => {
+              this.transports[sid] = autoTransport;
+              this.servers[sid] = autoServer;
+              this.sessionMetadata[sid] = { lastAccess: new Date(), createdAt: new Date() };
+              this.sessionContexts[sid] = instanceContext;
+              logger.info('handleRequest: Auto-initialized session stored', { sessionId: sid });
+            }
           });
+          autoTransport.onclose = () => {
+            const sid = autoTransport.sessionId;
+            if (sid) this.removeSession(sid, 'transport_closed');
+          };
+          await autoServer.connect(autoTransport);
+          await autoTransport.handleRequest(req, res, req.body);
           return;
         }
-        
+
         // Handle request with the transport
-        logger.info('handleRequest: Handling request with transport', { 
+        logger.info('handleRequest: Handling request with transport', {
           sessionId: isInitialize ? 'new' : sessionId,
-          isInitialize 
+          isInitialize
         });
         await transport.handleRequest(req, res, req.body);
-        
+
         const duration = Date.now() - startTime;
         logger.info('MCP request completed', { duration, sessionId: transport.sessionId });
-        
+
       } catch (error) {
         logger.error('handleRequest: MCP request error:', {
           error: error instanceof Error ? error.message : error,
@@ -679,11 +685,11 @@ export class SingleSessionHTTPServer {
           },
           duration: Date.now() - startTime
         });
-        
+
         if (!res.headersSent) {
           // Send sanitized error to client
           const sanitizedError = this.sanitizeErrorForClient(error);
-          res.status(500).json({ 
+          res.status(500).json({
             jsonrpc: '2.0',
             error: {
               code: -32603,
@@ -698,12 +704,12 @@ export class SingleSessionHTTPServer {
       }
     });
   }
-  
+
 
   /**
    * Reset the session for SSE - clean up old and create new SSE transport
    */
-  private async resetSessionSSE(res: express.Response): Promise<void> {
+  private async resetSessionSSE(res: express.Response, reuseSessionId?: string): Promise<void> {
     // Clean up old session if exists
     if (this.session) {
       const sessionId = this.session.sessionId;
@@ -727,23 +733,26 @@ export class SingleSessionHTTPServer {
         logger.warn('Error closing transport for SSE session', { sessionId, error: transportError });
       }
     }
-    
+
     try {
       // Create new session
       logger.info('Creating new N8NDocumentationMCPServer for SSE...');
       const server = new N8NDocumentationMCPServer();
-      
+
       // Generate cryptographically secure session ID
-      const sessionId = uuidv4();
-      
+      const sessionId = reuseSessionId || uuidv4();
+      logger.info('SSE session ID', { sessionId, reused: !!reuseSessionId });
+
       logger.info('Creating SSEServerTransport...');
       const transport = new SSEServerTransport('/mcp', res);
-      
+
+      // Send session ID header BEFORE opening the SSE stream so the client
+      // receives it and uses it in all subsequent POSTs
+      res.setHeader('Mcp-Session-Id', sessionId);
+
       logger.info('Connecting server to SSE transport...');
       await server.connect(transport);
-      
-      // Note: server.connect() automatically calls transport.start(), so we don't need to call it again
-      
+
       this.session = {
         server,
         transport,
@@ -752,14 +761,14 @@ export class SingleSessionHTTPServer {
         initialized: false,
         isSSE: true
       };
-      
+
       logger.info('Created new SSE session successfully', { sessionId: this.session.sessionId });
     } catch (error) {
       logger.error('Failed to create SSE session:', error);
       throw error;
     }
   }
-  
+
   /**
    * Check if current session is expired
    */
@@ -786,20 +795,20 @@ export class SingleSessionHTTPServer {
    */
   async start(): Promise<void> {
     const app = express();
-    
+
     // Create JSON parser middleware for endpoints that need it
     const jsonParser = express.json({ limit: '10mb' });
-    
+
     // Configure trust proxy for correct IP logging behind reverse proxies
     const trustProxy = process.env.TRUST_PROXY ? Number(process.env.TRUST_PROXY) : 0;
     if (trustProxy > 0) {
       app.set('trust proxy', trustProxy);
       logger.info(`Trust proxy enabled with ${trustProxy} hop(s)`);
     }
-    
+
     // DON'T use any body parser globally - StreamableHTTPServerTransport needs raw stream
     // Only use JSON parser for specific endpoints that need it
-    
+
     // Security headers
     app.use((req, res, next) => {
       res.setHeader('X-Content-Type-Options', 'nosniff');
@@ -808,7 +817,7 @@ export class SingleSessionHTTPServer {
       res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
       next();
     });
-    
+
     // CORS configuration
     app.use((req, res, next) => {
       const allowedOrigin = process.env.CORS_ORIGIN || '*';
@@ -817,14 +826,14 @@ export class SingleSessionHTTPServer {
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Mcp-Session-Id');
       res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
       res.setHeader('Access-Control-Max-Age', '86400');
-      
+
       if (req.method === 'OPTIONS') {
         res.sendStatus(204);
         return;
       }
       next();
     });
-    
+
     // Request logging middleware
     app.use((req, res, next) => {
       logger.info(`${req.method} ${req.path}`, {
@@ -834,14 +843,14 @@ export class SingleSessionHTTPServer {
       });
       next();
     });
-    
+
     // Root endpoint with API information
     app.get('/', (req, res) => {
       const port = parseInt(process.env.PORT || '3000');
       const host = process.env.HOST || '0.0.0.0';
       const baseUrl = detectBaseUrl(req, host, port);
       const endpoints = formatEndpointUrls(baseUrl);
-      
+
       res.json({
         name: 'n8n Documentation MCP Server',
         version: PROJECT_VERSION,
@@ -874,9 +883,9 @@ export class SingleSessionHTTPServer {
       const sessionMetrics = this.getSessionMetrics();
       const isProduction = process.env.NODE_ENV === 'production';
       const isDefaultToken = this.authToken === 'REPLACE_THIS_AUTH_TOKEN_32_CHARS_MIN_abcdefgh';
-      
-      res.json({ 
-        status: 'ok', 
+
+      res.json({
+        status: 'ok',
         mode: 'sdk-pattern-transports',
         version: PROJECT_VERSION,
         environment: process.env.NODE_ENV || 'development',
@@ -905,7 +914,7 @@ export class SingleSessionHTTPServer {
         timestamp: new Date().toISOString()
       });
     });
-    
+
     // Test endpoint for manual testing without auth
     app.post('/mcp/test', jsonParser, async (req: express.Request, res: express.Response): Promise<void> => {
       logger.info('TEST ENDPOINT: Manual test request received', {
@@ -915,7 +924,7 @@ export class SingleSessionHTTPServer {
         bodyType: typeof req.body,
         bodyContent: req.body ? JSON.stringify(req.body, null, 2) : 'undefined'
       });
-      
+
       // Negotiate protocol version for test endpoint
       const negotiationResult = negotiateProtocolVersion(
         undefined, // no client version in test
@@ -923,9 +932,9 @@ export class SingleSessionHTTPServer {
         req.get('user-agent'),
         req.headers
       );
-      
+
       logProtocolNegotiation(negotiationResult, logger, 'TEST_ENDPOINT');
-      
+
       // Test what a basic MCP initialize request should look like
       const testResponse = {
         jsonrpc: '2.0',
@@ -941,11 +950,11 @@ export class SingleSessionHTTPServer {
           }
         }
       };
-      
+
       logger.info('TEST ENDPOINT: Sending test response', {
         response: testResponse
       });
-      
+
       res.json(testResponse);
     });
 
@@ -963,15 +972,16 @@ export class SingleSessionHTTPServer {
           // Fall through to standard response
         }
       }
-      
+
       // Check Accept header for text/event-stream (SSE support)
       const accept = req.headers.accept;
       if (accept && accept.includes('text/event-stream')) {
         logger.info('SSE stream request received - establishing SSE connection');
-        
+
         try {
           // Create or reset session for SSE
-          await this.resetSessionSSE(res);
+          const existingSessionId = this.session?.sessionId;
+          await this.resetSessionSSE(res, existingSessionId);
           logger.info('SSE connection established successfully');
         } catch (error) {
           logger.error('Failed to establish SSE connection:', error);
@@ -996,9 +1006,9 @@ export class SingleSessionHTTPServer {
           req.get('user-agent'),
           req.headers
         );
-        
+
         logProtocolNegotiation(negotiationResult, logger, 'N8N_MODE_GET');
-        
+
         res.json({
           protocolVersion: negotiationResult.version,
           serverInfo: {
@@ -1011,7 +1021,7 @@ export class SingleSessionHTTPServer {
         });
         return;
       }
-      
+
       // Standard response for non-n8n mode
       res.json({
         description: 'n8n Documentation MCP Server',
@@ -1043,7 +1053,7 @@ export class SingleSessionHTTPServer {
     // Session termination endpoint
     app.delete('/mcp', async (req: express.Request, res: express.Response): Promise<void> => {
       const mcpSessionId = req.headers['mcp-session-id'] as string;
-      
+
       if (!mcpSessionId) {
         res.status(400).json({
           jsonrpc: '2.0',
@@ -1055,7 +1065,7 @@ export class SingleSessionHTTPServer {
         });
         return;
       }
-      
+
       // Validate session ID format
       if (!this.isValidSessionId(mcpSessionId)) {
         res.status(400).json({
@@ -1068,7 +1078,7 @@ export class SingleSessionHTTPServer {
         });
         return;
       }
-      
+
       // Check if session exists in new transport map
       if (this.transports[mcpSessionId]) {
         logger.info('Terminating session via DELETE request', { sessionId: mcpSessionId });
@@ -1099,41 +1109,19 @@ export class SingleSessionHTTPServer {
     });
 
 
-    // SECURITY: Rate limiting for authentication endpoint
-    // Prevents brute force attacks and DoS
-    // See: https://github.com/czlonkowski/n8n-mcp/issues/265 (HIGH-02)
-    const authLimiter = rateLimit({
-      windowMs: parseInt(process.env.AUTH_RATE_LIMIT_WINDOW || '900000'), // 15 minutes
-      max: parseInt(process.env.AUTH_RATE_LIMIT_MAX || '20'), // 20 authentication attempts per IP
-      message: {
-        jsonrpc: '2.0',
-        error: {
-          code: -32000,
-          message: 'Too many authentication attempts. Please try again later.'
-        },
-        id: null
-      },
-      standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
-      legacyHeaders: false, // Disable `X-RateLimit-*` headers
-      handler: (req, res) => {
-        logger.warn('Rate limit exceeded', {
-          ip: req.ip,
-          userAgent: req.get('user-agent'),
-          event: 'rate_limit'
-        });
-        res.status(429).json({
+    // Main MCP endpoint with authentication
+    app.post('/mcp', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+      const userAgent = req.get('user-agent') || '';
+      if (userAgent !== 'Claude-User') {
+        res.status(403).json({
           jsonrpc: '2.0',
-          error: {
-            code: -32000,
-            message: 'Too many authentication attempts'
-          },
+          error: { code: -32000, message: 'Forbidden' },
           id: null
         });
+        return;
       }
-    });
-
-    // Main MCP endpoint with authentication and rate limiting
-    app.post('/mcp', authLimiter, jsonParser, async (req: express.Request, res: express.Response): Promise<void> => {
+      next();
+    }, jsonParser, async (req: express.Request, res: express.Response): Promise<void> => {
       // Log comprehensive debug info about the request
       logger.info('POST /mcp request received - DETAILED DEBUG', {
         headers: req.headers,
@@ -1150,7 +1138,7 @@ export class SingleSessionHTTPServer {
         url: req.url,
         originalUrl: req.originalUrl
       });
-      
+
       // Handle connection close to immediately clean up sessions
       const sessionId = req.headers['mcp-session-id'] as string | undefined;
       // Only add event listener if the request object supports it (not in test mocks)
@@ -1173,26 +1161,28 @@ export class SingleSessionHTTPServer {
             });
           }
         };
-        
+
         req.on('close', closeHandler);
-        
+
         // Clean up event listener when response ends to prevent memory leaks
         res.on('finish', () => {
           req.removeListener('close', closeHandler);
         });
       }
-      
+
       // Enhanced authentication check with specific logging
-      const authHeader = req.headers.authorization;
-      
+      const queryToken = req.query.token as string;
+      const authHeader = req.headers.authorization ||
+        (queryToken ? `Bearer ${queryToken}` : undefined);
+
       // Check if Authorization header is missing
       if (!authHeader) {
-        logger.warn('Authentication failed: Missing Authorization header', { 
+        logger.warn('Authentication failed: Missing Authorization header', {
           ip: req.ip,
           userAgent: req.get('user-agent'),
           reason: 'no_auth_header'
         });
-        res.status(401).json({ 
+        res.status(401).json({
           jsonrpc: '2.0',
           error: {
             code: -32001,
@@ -1202,16 +1192,16 @@ export class SingleSessionHTTPServer {
         });
         return;
       }
-      
+
       // Check if Authorization header has Bearer prefix
       if (!authHeader.startsWith('Bearer ')) {
-        logger.warn('Authentication failed: Invalid Authorization header format (expected Bearer token)', { 
+        logger.warn('Authentication failed: Invalid Authorization header format (expected Bearer token)', {
           ip: req.ip,
           userAgent: req.get('user-agent'),
           reason: 'invalid_auth_format',
           headerPrefix: authHeader.substring(0, Math.min(authHeader.length, 10)) + '...'  // Log first 10 chars for debugging
         });
-        res.status(401).json({ 
+        res.status(401).json({
           jsonrpc: '2.0',
           error: {
             code: -32001,
@@ -1221,7 +1211,7 @@ export class SingleSessionHTTPServer {
         });
         return;
       }
-      
+
       // Extract token and trim whitespace
       const token = authHeader.slice(7).trim();
 
@@ -1246,12 +1236,16 @@ export class SingleSessionHTTPServer {
         });
         return;
       }
-      
+
       // Handle request with single session
+      const incomingSessionId = req.headers['mcp-session-id'] as string | undefined;
       logger.info('Authentication successful - proceeding to handleRequest', {
         hasSession: !!this.session,
         sessionType: this.session?.isSSE ? 'SSE' : 'StreamableHTTP',
-        sessionInitialized: this.session?.initialized
+        sessionInitialized: this.session?.initialized,
+        incomingSessionId,
+        sessionExists: incomingSessionId ? !!this.transports[incomingSessionId] : false,
+        isInitializeRequest: req.body ? isInitializeRequest(req.body) : false
       });
 
       // Extract instance context from headers if present (for multi-tenant support)
@@ -1306,28 +1300,28 @@ export class SingleSessionHTTPServer {
       }
 
       await this.handleRequest(req, res, instanceContext);
-      
+
       logger.info('POST /mcp request completed - checking response status', {
         responseHeadersSent: res.headersSent,
         responseStatusCode: res.statusCode,
         responseFinished: res.finished
       });
     });
-    
+
     // 404 handler
     app.use((req, res) => {
-      res.status(404).json({ 
+      res.status(404).json({
         error: 'Not found',
         message: `Cannot ${req.method} ${req.path}`
       });
     });
-    
+
     // Error handler
     app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
       logger.error('Express error handler:', err);
-      
+
       if (!res.headersSent) {
-        res.status(500).json({ 
+        res.status(500).json({
           jsonrpc: '2.0',
           error: {
             code: -32603,
@@ -1338,42 +1332,42 @@ export class SingleSessionHTTPServer {
         });
       }
     });
-    
+
     const port = parseInt(process.env.PORT || '3000');
     const host = process.env.HOST || '0.0.0.0';
-    
+
     this.expressServer = app.listen(port, host, () => {
       const isProduction = process.env.NODE_ENV === 'production';
       const isDefaultToken = this.authToken === 'REPLACE_THIS_AUTH_TOKEN_32_CHARS_MIN_abcdefgh';
-      
-      logger.info(`n8n MCP Single-Session HTTP Server started`, { 
-        port, 
-        host, 
+
+      logger.info(`n8n MCP Single-Session HTTP Server started`, {
+        port,
+        host,
         environment: process.env.NODE_ENV || 'development',
         maxSessions: MAX_SESSIONS,
         sessionTimeout: this.sessionTimeout / 1000 / 60,
         production: isProduction,
         defaultToken: isDefaultToken
       });
-      
+
       // Detect the base URL using our utility
       const baseUrl = getStartupBaseUrl(host, port);
       const endpoints = formatEndpointUrls(baseUrl);
-      
+
       console.log(`n8n MCP Single-Session HTTP Server running on ${host}:${port}`);
       console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`Session Limits: ${MAX_SESSIONS} max sessions, ${this.sessionTimeout / 1000 / 60}min timeout`);
       console.log(`Health check: ${endpoints.health}`);
       console.log(`MCP endpoint: ${endpoints.mcp}`);
-      
+
       if (isProduction) {
         console.log('🔒 Running in PRODUCTION mode - enhanced security enabled');
       } else {
         console.log('🛠️ Running in DEVELOPMENT mode');
       }
-      
+
       console.log('\nPress Ctrl+C to stop the server');
-      
+
       // Start periodic warning timer if using default token
       if (isDefaultToken && !isProduction) {
         setInterval(() => {
@@ -1383,14 +1377,14 @@ export class SingleSessionHTTPServer {
           }
         }, 300000); // Every 5 minutes
       }
-      
+
       if (process.env.BASE_URL || process.env.PUBLIC_URL) {
         console.log(`\nPublic URL configured: ${baseUrl}`);
       } else if (process.env.TRUST_PROXY && Number(process.env.TRUST_PROXY) > 0) {
         console.log(`\nNote: TRUST_PROXY is enabled. URLs will be auto-detected from proxy headers.`);
       }
     });
-    
+
     // Handle server errors
     this.expressServer.on('error', (error: any) => {
       if (error.code === 'EADDRINUSE') {
@@ -1404,24 +1398,24 @@ export class SingleSessionHTTPServer {
       }
     });
   }
-  
+
   /**
    * Graceful shutdown
    */
   async shutdown(): Promise<void> {
     logger.info('Shutting down Single-Session HTTP server...');
-    
+
     // Stop session cleanup timer
     if (this.cleanupTimer) {
       clearInterval(this.cleanupTimer);
       this.cleanupTimer = null;
       logger.info('Session cleanup timer stopped');
     }
-    
+
     // Close all active transports (SDK pattern)
     const sessionIds = Object.keys(this.transports);
     logger.info(`Closing ${sessionIds.length} active sessions`);
-    
+
     for (const sessionId of sessionIds) {
       try {
         logger.info(`Closing transport for session ${sessionId}`);
@@ -1430,7 +1424,7 @@ export class SingleSessionHTTPServer {
         logger.warn(`Error closing transport for session ${sessionId}:`, error);
       }
     }
-    
+
     // Clean up legacy session (for SSE compatibility)
     if (this.session) {
       try {
@@ -1441,7 +1435,7 @@ export class SingleSessionHTTPServer {
       }
       this.session = null;
     }
-    
+
     // Close Express server
     if (this.expressServer) {
       await new Promise<void>((resolve) => {
@@ -1463,13 +1457,13 @@ export class SingleSessionHTTPServer {
 
     logger.info('Single-Session HTTP server shutdown completed');
   }
-  
+
   /**
    * Get current session info (for testing/debugging)
    */
-  getSessionInfo(): { 
-    active: boolean; 
-    sessionId?: string; 
+  getSessionInfo(): {
+    active: boolean;
+    sessionId?: string;
     age?: number;
     sessions?: {
       total: number;
@@ -1480,10 +1474,10 @@ export class SingleSessionHTTPServer {
     };
   } {
     const metrics = this.getSessionMetrics();
-    
+
     // Legacy SSE session info
     if (!this.session) {
-      return { 
+      return {
         active: false,
         sessions: {
           total: metrics.totalSessions,
@@ -1494,7 +1488,7 @@ export class SingleSessionHTTPServer {
         }
       };
     }
-    
+
     return {
       active: true,
       sessionId: this.session.sessionId,
@@ -1704,29 +1698,29 @@ export class SingleSessionHTTPServer {
 // Start if called directly
 if (require.main === module) {
   const server = new SingleSessionHTTPServer();
-  
+
   // Graceful shutdown handlers
   const shutdown = async () => {
     await server.shutdown();
     process.exit(0);
   };
-  
+
   process.on('SIGTERM', shutdown);
   process.on('SIGINT', shutdown);
-  
+
   // Handle uncaught errors
   process.on('uncaughtException', (error) => {
     logger.error('Uncaught exception:', error);
     console.error('Uncaught exception:', error);
     shutdown();
   });
-  
+
   process.on('unhandledRejection', (reason, promise) => {
     logger.error('Unhandled rejection:', reason);
     console.error('Unhandled rejection at:', promise, 'reason:', reason);
     shutdown();
   });
-  
+
   // Start server
   server.start().catch(error => {
     logger.error('Failed to start Single-Session HTTP server:', error);
